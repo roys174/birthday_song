@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# Audio files (potentially large)
+*.mp3
+*.wav
+*.m4a
+*.flac
+*.ogg
+*.aac
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor swap files
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# pytest cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temp / working directories
+birthday_song_*/
+birthday_output_*/
+
+# Model caches (large, downloaded at runtime)
+~/.cache/torch/

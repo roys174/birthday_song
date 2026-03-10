@@ -1,0 +1,19 @@
+yt-dlp>=2024.1.0
+demucs>=4.0.1
+whisperx>=3.1.1
+gradio>=4.0.0
+pydub>=0.25.1
+librosa>=0.10.0
+soundfile>=0.12.1
+pyrubberband>=0.3.0
+python-dotenv>=1.0.0
+numpy>=1.24.0
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# ElevenLabs backend (paid)
+elevenlabs>=1.5.0
+
+# Local/free backend
+chatterbox-tts>=0.1.0  # Resemble AI zero-shot voice cloning (MIT, pre-built wheels)
+edge-tts>=6.1.0        # Microsoft Edge TTS (free, native Hebrew support)
