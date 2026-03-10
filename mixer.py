@@ -54,6 +54,15 @@ def mix_tracks(
         pad = voc_len - inst_len
         instrumental = np.pad(instrumental, ((0, pad), (0, 0)))
 
+    # Auto-level: match synthesized vocal RMS to instrumental RMS so vocals
+    # are audible without manual tuning of vocals_volume.
+    inst_rms = _rms(instrumental)
+    voc_rms = _rms(vocals)
+    if voc_rms > 1e-8 and inst_rms > 1e-8 and instrumental_volume > 0 and vocals_volume > 0:
+        auto_gain = (inst_rms / voc_rms) * 0.8   # target ~80% of instrumental level
+        vocals = vocals * auto_gain
+        print(f"  Auto-gain: {auto_gain:.2f}x (inst RMS={inst_rms:.4f}, voc RMS={voc_rms:.4f})")
+
     # Mix
     mixed = instrumental_volume * instrumental + vocals_volume * vocals
 
@@ -68,3 +77,10 @@ def mix_tracks(
     print(f"Final mix saved to: {output_path}")
 
     return output_path
+
+
+def _rms(audio: np.ndarray) -> float:
+    """RMS of non-silent samples."""
+    flat = audio.flatten()
+    active = flat[np.abs(flat) > 0.001]
+    return float(np.sqrt(np.mean(active ** 2))) if len(active) > 0 else 0.0

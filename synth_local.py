@@ -80,6 +80,9 @@ def _synthesize_chatterbox(
 ) -> list[np.ndarray]:
     from chatterbox.tts import ChatterboxTTS
 
+    # Chatterbox works best with a short clean reference (≤15 s)
+    ref_path = _clip_reference(vocals_path, max_duration=15.0)
+
     print("Loading Chatterbox TTS model (downloads on first run)...")
     model = ChatterboxTTS.from_pretrained(DEVICE)
 
@@ -89,15 +92,37 @@ def _synthesize_chatterbox(
             results.append(np.zeros(int(seg.duration * TARGET_SR)))
             continue
         print(f"  Chatterbox [{i+1}/{len(segments)}]: {seg.text[:60]}")
-        wav = model.generate(seg.text, audio_prompt_path=vocals_path)
-        # wav is a torch tensor (1, samples) at model.sr
+        wav = model.generate(seg.text, audio_prompt_path=ref_path)
         audio = wav.squeeze().cpu().numpy().astype(np.float32)
         sr = model.sr
         if sr != TARGET_SR:
             audio = librosa.resample(audio, orig_sr=sr, target_sr=TARGET_SR)
+        audio = _normalize_rms(audio, target_db=-18.0)
+        print(f"    → {len(audio)/TARGET_SR:.2f}s, peak={np.max(np.abs(audio)):.3f}")
         results.append(audio)
 
     return results
+
+
+def _clip_reference(vocals_path: str, max_duration: float = 15.0) -> str:
+    """Return a path to at most max_duration seconds of the reference vocals."""
+    audio, sr = librosa.load(vocals_path, sr=TARGET_SR, mono=True, duration=max_duration)
+    # If the file is already short enough, return it directly
+    original_dur = librosa.get_duration(path=vocals_path)
+    if original_dur <= max_duration:
+        return vocals_path
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    sf.write(tmp.name, audio, sr)
+    return tmp.name
+
+
+def _normalize_rms(audio: np.ndarray, target_db: float = -18.0) -> np.ndarray:
+    """Scale audio so its RMS level matches target_db (dBFS)."""
+    rms = np.sqrt(np.mean(audio ** 2))
+    if rms < 1e-8:
+        return audio
+    target_rms = 10 ** (target_db / 20.0)
+    return (audio * (target_rms / rms)).astype(np.float32)
 
 
 # --------------------------------------------------------------------------- #
@@ -203,15 +228,26 @@ def _assemble(audios: list[np.ndarray], segments: list[LyricSegment]) -> np.ndar
     for audio, seg in zip(audios, segments):
         if len(audio) == 0:
             continue
-        target_dur = seg.duration
         current_dur = len(audio) / TARGET_SR
         if current_dur < 0.01:
             continue
 
-        ratio = max(0.3, min(3.0, target_dur / current_dur))
-        try:
-            stretched = pyrb.time_stretch(audio, TARGET_SR, ratio)
-        except Exception:
+        target_dur = seg.duration
+        ratio = target_dur / current_dur
+
+        if 0.5 <= ratio <= 2.0:
+            # Comfortable stretch range — apply time-stretch
+            try:
+                stretched = pyrb.time_stretch(audio, TARGET_SR, ratio)
+            except Exception:
+                stretched = audio
+        elif ratio < 0.5:
+            # Need to compress a lot — trim to fit instead of extreme compression
+            samples_needed = int(target_dur * TARGET_SR)
+            stretched = audio[:samples_needed]
+        else:
+            # ratio > 2.0: segment is much longer than speech (e.g. instrumental tail)
+            # Place speech at natural pace from seg.start; don't stretch unnaturally
             stretched = audio
 
         if TARGET_SR != OUTPUT_SR:
@@ -223,8 +259,13 @@ def _assemble(audios: list[np.ndarray], segments: list[LyricSegment]) -> np.ndar
             output = np.pad(output, (0, end - len(output)))
         output[start:end] += stretched
 
+    # Normalize assembled vocals to a consistent listening level
     mx = np.max(np.abs(output))
-    if mx > 0.95:
-        output *= 0.95 / mx
+    if mx > 1e-8:
+        target_rms_db = -18.0
+        target_peak = 0.7
+        output = output * min(target_peak / mx, 10 ** (target_rms_db / 20) / (np.sqrt(np.mean(output[output != 0] ** 2)) + 1e-8))
+        # Final safety clip
+        output = np.clip(output, -0.95, 0.95)
 
     return output

@@ -95,12 +95,19 @@ def _assemble_segments(segments_audio: list[tuple[np.ndarray, int, LyricSegment]
         if current_duration < 0.01:
             continue
 
-        ratio = max(0.3, min(3.0, target_duration / current_duration))
-        try:
-            stretched = pyrb.time_stretch(audio_data, sample_rate, ratio)
-        except Exception as e:
-            print(f"  Time-stretch failed ({e}), using original")
+        ratio = target_duration / current_duration
+        if ratio > 2.0:
+            # Segment is much longer than speech — place at natural pace
             stretched = audio_data
+        elif ratio < 0.5:
+            # Need to compress a lot — trim instead
+            stretched = audio_data[:int(target_duration * sample_rate)]
+        else:
+            try:
+                stretched = pyrb.time_stretch(audio_data, sample_rate, ratio)
+            except Exception as e:
+                print(f"  Time-stretch failed ({e}), using original")
+                stretched = audio_data
 
         if sample_rate != 44100:
             stretched = librosa.resample(stretched, orig_sr=sample_rate, target_sr=44100)
