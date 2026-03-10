@@ -54,12 +54,20 @@ def mix_tracks(
         pad = voc_len - inst_len
         instrumental = np.pad(instrumental, ((0, pad), (0, 0)))
 
-    # Auto-level: match synthesized vocal RMS to instrumental RMS so vocals
-    # are audible without manual tuning of vocals_volume.
+    # Normalize vocals to a fixed target peak so they are always audible
+    # regardless of how sparse the vocal track is (lots of silence).
+    vocal_peak = np.max(np.abs(vocals))
+    if vocal_peak > 1e-8:
+        target_vocal_peak = 0.7
+        gain = target_vocal_peak / vocal_peak
+        vocals = vocals * gain
+        print(f"  Vocal peak normalization: {gain:.2f}x (peak {vocal_peak:.4f} → {target_vocal_peak})")
+
+    # Auto-level: also scale by instrumental level so vocals sit in the mix naturally.
     inst_rms = _rms(instrumental)
     voc_rms = _rms(vocals)
     if voc_rms > 1e-8 and inst_rms > 1e-8 and instrumental_volume > 0 and vocals_volume > 0:
-        auto_gain = (inst_rms / voc_rms) * 0.8   # target ~80% of instrumental level
+        auto_gain = min((inst_rms / voc_rms) * 0.8, 3.0)  # target ~80% of instrumental, cap at 3x
         vocals = vocals * auto_gain
         print(f"  Auto-gain: {auto_gain:.2f}x (inst RMS={inst_rms:.4f}, voc RMS={voc_rms:.4f})")
 
